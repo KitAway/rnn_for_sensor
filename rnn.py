@@ -4,7 +4,7 @@ import tensorflow as tf
 
 dataList = list()
 train_dataset = 'dataset_10518samples.csv'
-with open(input_dataset, 'rb') as csvfile:
+with open(train_dataset, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         dataList.append(row)
@@ -76,7 +76,7 @@ with graph.as_default():
     w1 = tf.Variable(tf.truncated_normal([hidden1_size, hidden2_size]))
     b1 = tf.Variable(tf.zeros([hidden2_size]))
 
-    w2 = tf.Variable(tf.truncated_normal([hidden2, hidden3_size]))
+    w2 = tf.Variable(tf.truncated_normal([hidden2_size, hidden3_size]))
     b2 = tf.Variable(tf.zeros([hidden3_size]))
 
     w3 = tf.Variable(tf.truncated_normal([hidden3_size, output_size]))
@@ -97,9 +97,8 @@ with graph.as_default():
                         train_input_size)))
         train_targets.append(tf.placeholder(tf.float32,
                     shape=(batch_size,output_size)))
-                1.0), trainable=False) 
     for p in train_inputs:
-        predictions = feed_model(train_inputs)
+        predictions = feed_model(p)
         loss = tf.losses.mean_squared_error(tf.concat(train_targets,0),
                 predictions)+(tf.nn.l2_loss(w0)+ tf.nn.l2_loss(w1)+
                     tf.nn.l2_loss(w2)) * 0.0001
@@ -115,16 +114,12 @@ with graph.as_default():
 
 
     valid_input = tf.placeholder(tf.float32, shape=(1,input_size))
-    init_valid_output = tf.Variable(tf.zeros([1, lstm_size]))
-    init_valid_state = init_state
-    reset_state = tf.group(
-        init_valid_output.assign(tf.zeros([1, lstm_size])),
-        init_valid_state.assign(init_state))
-    valid_output, valid_state = lstm_cell(
-        valid_input, init_valid_output, init_valid_state)
-    with tf.control_dependencies([init_valid_output.assign(valid_output),
-                                init_valid_state.assign(valid_state)]):
-        sample_prediction = feed_model(valid_output)
+    valid_target = target = tf.Variable(tf.zeros([1, output_size]))
+    reset_state = tf.group(target.assign(tf.Variable(tf.zeros([1,
+                        output_size]))),
+        valid_target.assign(tf.Variable(tf.zeros([1, output_size]))))
+    with tf.control_dependencies([valid_target.assign(target)]):
+        target = feed_model(tf.concat([valid_input, valid_target],1))
 
 number_reset = 10159
 num_steps = 20300
