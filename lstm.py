@@ -3,29 +3,22 @@ import numpy as np
 import tensorflow as tf
 
 dataList = list()
-with open('dataset_10518samples.csv', 'rb') as csvfile:
+with open('dataset_63642samples_with_noise.csv', 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         dataList.append(row)
 dArray = np.asarray(dataList, dtype=float)
-N = dArray.shape[1]
-newA = np.zeros([dArray.shape[0], dArray.shape[1]*2])
-X = np.arange(0, 2*N, 2) 
-X_new = np.arange(2*N)
 dDev = np.std(dArray, 1)
 dMean = np.mean(dArray, 1)
 for i in range(dArray.shape[1]):
     dArray[:,i] = (dArray[:,i] - dMean)/dDev
-for i in range(dArray.shape[0]):
-    newA[i,:] = np.interp(X_new, X, dArray[i,:])
-    
 
-valid_size = 3000
-valid_set = newA[:,:valid_size]
-train_set = newA 
+valid_size = 1000
+valid_set = dArray[:,:valid_size]
+train_set = dArray[:,valid_size:] 
 
-lstm_size = 16
-batch_size=1
+lstm_size = 64
+batch_size=50
 num_unrollings=1
 input_size = 4
 output_size = 2
@@ -59,8 +52,8 @@ valid_gen = GenerateBatchData(valid_set, 1, 1)
 batch, label = train_gen.next()
 #print("batch:", batch)
 #print("label:", label)            
-extent_size = 8
-hidden_size = 8
+extent_size = 32
+hidden_size = 32
 graph=tf.Graph()
 with graph.as_default():
 
@@ -97,6 +90,11 @@ with graph.as_default():
             dtype=tf.float32)
     b2 = tf.Variable(tf.zeros([output_size]), dtype=tf.float32)
 
+    def train_feed_model(output):
+        hidden_layer = tf.nn.relu(tf.nn.dropout(tf.matmul(output, w1) +
+                    b1,0.5))
+        predictions = tf.matmul(hidden_layer,w2) + b2
+        return predictions
     def feed_model(output):
         hidden_layer = tf.nn.relu(tf.matmul(output, w1) + b1)
         predictions = tf.matmul(hidden_layer,w2) + b2
@@ -124,12 +122,11 @@ with graph.as_default():
         outCat = tf.concat(outputs,0)
         predictions = feed_model(outCat)
         loss = tf.losses.mean_squared_error(tf.concat(train_targets,0),
-                predictions)+(tf.nn.l2_loss(w0)+ tf.nn.l2_loss(w1)+
-                    tf.nn.l2_loss(w2)) * 0.0001
+                predictions)
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        0.009, global_step, 1000, 0.8)
+        0.5, global_step, 300, 0.9)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -137,39 +134,36 @@ with graph.as_default():
         zip(gradients, v), global_step=global_step)
 
 
+    init_state_single = tf.Variable(tf.random_uniform([1, lstm_size], -1.0,
+                1.0), trainable=False) 
     valid_input = tf.placeholder(tf.float32, shape=(1,input_size))
     init_valid_output = tf.Variable(tf.zeros([1, lstm_size]))
-    init_valid_state = init_state
+    init_valid_state = init_state_single
     reset_state = tf.group(
         init_valid_output.assign(tf.zeros([1, lstm_size])),
-        init_valid_state.assign(init_state))
+        init_valid_state.assign(init_state_single))
     valid_output, valid_state = lstm_cell(
         valid_input, init_valid_output, init_valid_state)
     with tf.control_dependencies([init_valid_output.assign(valid_output),
                                 init_valid_state.assign(valid_state)]):
         sample_prediction = feed_model(valid_output)
 
-number_reset = 10159
-num_steps = 20300
-summary_frequency = 500
+num_steps = 1201
+summary_frequency = 100
 
 with tf.Session(graph=graph) as session:
     tf.global_variables_initializer().run()
     print('Initialized')
     mean_loss = 0
     for step in range(num_steps):
-        if(step == number_reset):
-            reset_train.run()
         batches, labels = train_gen.next()
         feed_dict = dict()
         for i in range(num_unrollings):
             feed_dict[train_inputs[i]] = batches[i]
 #            print(batches[i])
             feed_dict[train_targets[i]] = labels[i]
-        _, l, p = session.run(
-            [optimizer, loss, predictions], feed_dict=feed_dict)
-        #_, l, p, lr = session.run(
-        #    [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
+        _, l, p, lr = session.run(
+            [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
         mean_loss += l
         if step % summary_frequency == 0:
             if step > 0:
@@ -177,7 +171,7 @@ with tf.Session(graph=graph) as session:
       # The mean loss is an estimate of the loss over the last few batches.
             print(
                 'Average loss at step %d: %f learning rate: %f' % (step,
-                    mean_loss, 0.01))
+                    mean_loss, lr))
             mean_loss = 0
     #        print("predictions:", p)
     #        print("targets:", labels)
