@@ -9,16 +9,26 @@ with open('datasetTR105101_noise_train.csv', 'rb') as csvfile:
     for row in creader:
         dataList.append(row)
 dArray = np.asarray(dataList, dtype=float)
-N = dArray.shape[1]
 dDev = np.std(dArray, 1)
 dMean = np.mean(dArray, 1)
 for i in range(dArray.shape[1]):
     dArray[:,i] = (dArray[:,i] - dMean)/dDev
 
-valid_size = 200
-valid_set = dArray[:,:valid_size]
-test_set = dArray[:, valid_size:valid_size*3]
-train_set = dArray[:,valid_size*3:] 
+testList=list()
+with open('datasetT393_noise_test.csv', 'rb') as csvfile:
+    creader = csv.reader(csvfile)
+    for row in creader:
+        testList.append(row)
+
+test_data = np.asarray(testList, dtype=float)
+for i in range(test_data.shape[1]):
+    test_data[:,i] = (test_data[:,i] - dMean)/dDev
+
+valid_size = 50
+valid_set = test_data[:,:valid_size]
+test_set = test_data
+train_set = dArray 
+train_size = train_set.shape[1]
 
 lstm_size = 128
 batch_size = 35
@@ -56,7 +66,7 @@ test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
 extent_size = 64
 hidden_size = 64
-dropRate = 0.96
+dropRate = 0.75
 graph=tf.Graph()
 with graph.as_default():
 
@@ -134,10 +144,10 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.0, global_step,450, 0.8)
+        1.0, global_step,500, 0.65)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
-    gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
+    gradients, _ = tf.clip_by_global_norm(gradients, 1.3)
     optimizer = optimizer.apply_gradients(
         zip(gradients, v), global_step=global_step)
 
@@ -156,7 +166,7 @@ with graph.as_default():
                                 init_valid_state.assign(valid_state)]):
         sample_prediction = feed_model(valid_output)
 
-num_steps = (N - valid_size)//batch_size
+num_steps = train_size//batch_size
 summary_frequency = 100
 
 with tf.Session(graph=graph) as session:
@@ -189,7 +199,9 @@ with tf.Session(graph=graph) as session:
             for _ in range(test_size):
                 vb,vl = valid_gen.next()
                 predict = sample_prediction.eval({valid_input: vb[0]})
-                valid_loss = valid_loss + ((predict - vl[0])**2).mean()
+                predictPos = predict * dDev[4:]
+                targetPos = vl[0] * dDev[4:]
+                valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
             print('Validation mean loss: %.2f' % float(valid_loss / test_size))
     reset_state.run() 
     valid_loss = 0;
@@ -198,8 +210,11 @@ with tf.Session(graph=graph) as session:
     for i in range(test_size):
         vb,vl = test_gen.next()
         predict = sample_prediction.eval({valid_input: vb[0]})
-        valid_loss = valid_loss + ((predict - vl[0])**2).mean()
-        if i > display and i < display + 10:
+        predictPos = predict * dDev[4:]
+        targetPos = vl[0] * dDev[4:]
+        valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
+        if i > display and i < display + 30:
+            print('='*80)
             print("positions:", vl[0]*dDev[4:]+dMean[4:])
             print("predictions:", predict*dDev[4:]+dMean[4:])
     print('Testing mean loss: %.2f' % float(valid_loss / test_size))
