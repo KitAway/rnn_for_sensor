@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 dataList = list()
-train_dataset = 'dataset_10518samples.csv'
+train_dataset = 'dataset_63642samples_with_noise.csv'
 with open(train_dataset, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
@@ -13,10 +13,11 @@ dDev = np.std(trainArray, 1)
 dMean = np.mean(trainArray, 1)
 for i in range(trainArray.shape[1]):
     trainArray[:,i] = (trainArray[:,i] - dMean)/dDev
-
-    
+noisetarget = np.append(np.asarray([[0],[0]], dtype=float), trainArray[4:, :-1], axis=1)
+tInput = np.append(trainArray[:4,:], noisetarget, axis=0)
+trainArray = np.append(tInput, trainArray[4:,:], axis=0)
 dataList = list()
-valid_dataset = 'dataset_10518samples.csv'
+valid_dataset = 'dataset_63642samples_with_noise.csv'
 with open(valid_dataset, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
@@ -27,10 +28,14 @@ dMean = np.mean(validArray, 1)
 for i in range(validArray.shape[1]):
     validArray[:,i] = (validArray[:,i] - dMean)/dDev
 
-valid_set = validArray
+valid_size = 1000
+test_size = 4000
+valid_set = validArray[:,:valid_size]
+test_set = validArray[:,valid_size : 5 * valid_size]
 train_set = trainArray 
+train_size = train_set.shape[1]    
 
-batch_size=1
+batch_size=30
 num_unrollings=1
 input_size = 4
 output_size = 2
@@ -46,7 +51,7 @@ class GenerateBatchData(object):
         self._input_size = input_size
         self._num_step = num_step
     def _next_batch(self):
-        batch = np.ndarray([self._batch_size, input_size], dtype=float)
+        batch = np.ndarray([self._batch_size, self._input_size], dtype=float)
         target = np.ndarray([self._batch_size, output_size], dtype=float)
         for i in range(self._batch_size):
             batch[i, :] = self._data_set[:self._input_size, self._cursor + i * self._sess_size]
@@ -64,9 +69,12 @@ class GenerateBatchData(object):
 train_gen = GenerateBatchData(train_set, batch_size, num_unrollings,
         train_input_size)
 valid_gen = GenerateBatchData(valid_set, 1, 1, input_size)
-hidden1_size = 16
-hidden2_size = 32
+test_gen = GenerateBatchData(test_set, 1, 1, input_size)
+hidden1_size = 64
+hidden2_size = 64
 hidden3_size = 64
+hidden4_size = 64
+dropoutRate = 0.3
 graph=tf.Graph()
 with graph.as_default():
 
@@ -79,14 +87,27 @@ with graph.as_default():
     w2 = tf.Variable(tf.truncated_normal([hidden2_size, hidden3_size]))
     b2 = tf.Variable(tf.zeros([hidden3_size]))
 
-    w3 = tf.Variable(tf.truncated_normal([hidden3_size, output_size]))
-    b3 = tf.Variable(tf.zeros([output_size]))
+    w3 = tf.Variable(tf.truncated_normal([hidden3_size, hidden4_size]))
+    b3 = tf.Variable(tf.zeros([hidden4_size]))
+    w4 = tf.Variable(tf.truncated_normal([hidden4_size, output_size]))
+    b4 = tf.Variable(tf.zeros([output_size]))
 
+    def train_feed_model(x):
+        hidden1_layer = tf.nn.relu(tf.matmul(x, w0) + b0)
+        hidden2_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(hidden1_layer, w1) +
+                    b1), dropoutRate)
+        hidden3_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(hidden2_layer, w2) +
+                    b2), dropoutRate)
+        hidden4_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(hidden3_layer, w3) +
+                    b3), dropoutRate)
+        predictions = tf.matmul(hidden4_layer,w4) + b4
+        return predictions
     def feed_model(x):
         hidden1_layer = tf.nn.relu(tf.matmul(x, w0) + b0)
         hidden2_layer = tf.nn.relu(tf.matmul(hidden1_layer, w1) + b1)
         hidden3_layer = tf.nn.relu(tf.matmul(hidden2_layer, w2) + b2)
-        predictions = tf.matmul(hidden3_layer,w3) + b3
+        hidden4_layer = tf.nn.relu(tf.matmul(hidden3_layer, w3) + b3)
+        predictions = tf.matmul(hidden4_layer,w4) + b4
         return predictions
     
     train_inputs = list()
@@ -98,14 +119,13 @@ with graph.as_default():
         train_targets.append(tf.placeholder(tf.float32,
                     shape=(batch_size,output_size)))
     for p in train_inputs:
-        predictions = feed_model(p)
+        predictions = train_feed_model(p)
         loss = tf.losses.mean_squared_error(tf.concat(train_targets,0),
-                predictions)+(tf.nn.l2_loss(w0)+ tf.nn.l2_loss(w1)+
-                    tf.nn.l2_loss(w2)) * 0.0001
+                predictions)
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        0.009, global_step, 1000, 0.8)
+        2.0, global_step, 500, 0.6)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
@@ -121,27 +141,22 @@ with graph.as_default():
     with tf.control_dependencies([valid_target.assign(target)]):
         target = feed_model(tf.concat([valid_input, valid_target],1))
 
-number_reset = 10159
-num_steps = 20300
-summary_frequency = 500
+num_steps = train_size//batch_size
+summary_frequency = 100
 
 with tf.Session(graph=graph) as session:
     tf.global_variables_initializer().run()
     print('Initialized')
     mean_loss = 0
     for step in range(num_steps):
-        if(step == number_reset):
-            reset_train.run()
         batches, labels = train_gen.next()
         feed_dict = dict()
         for i in range(num_unrollings):
             feed_dict[train_inputs[i]] = batches[i]
 #            print(batches[i])
             feed_dict[train_targets[i]] = labels[i]
-        _, l, p = session.run(
-            [optimizer, loss, predictions], feed_dict=feed_dict)
-        #_, l, p, lr = session.run(
-        #    [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
+        _, l, p, lr = session.run(
+            [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
         mean_loss += l
         if step % summary_frequency == 0:
             if step > 0:
@@ -149,21 +164,27 @@ with tf.Session(graph=graph) as session:
       # The mean loss is an estimate of the loss over the last few batches.
             print(
                 'Average loss at step %d: %f learning rate: %f' % (step,
-                    mean_loss, 0.01))
+                    mean_loss, lr))
             mean_loss = 0
-    #        print("predictions:", p)
-    #        print("targets:", labels)
+            reset_state.run() 
+            valid_loss = 0;
+            test_size = valid_size 
+            for _ in range(test_size):
+                vb,vl = valid_gen.next()
+                predict = target.eval({valid_input: vb[0]})
+                valid_loss = valid_loss + ((predict - vl[0])**2).mean()
+            print('Validation mean loss: %.2f' % float(valid_loss / test_size))
     reset_state.run() 
     valid_loss = 0;
-    test_size = valid_size
+    test_size = valid_size * 4 
+    display = test_size * 0.8
     for i in range(test_size):
-        vb,vl = valid_gen.next()
-        predict = sample_prediction.eval({valid_input: vb[0]})
-        valid_loss = valid_loss + ((predict-vl[0])**2).mean()
-        if i> (test_size - 10):
-            print(i,'='*80)
-            print("frequencies:", vb[0])
+        vb,vl = test_gen.next()
+        predict = target.eval({valid_input: vb[0]})
+        valid_loss = valid_loss + ((predict - vl[0])**2).mean()
+        if i > display and i < display + 10:
+            #print("positions:", vl[0]*dDev[4:]+dMean[4:])
+            #print("predictions:", predict*dDev[4:]+dMean[4:])
             print("positions:", vl[0])
-            print("predictions:",predict)
-    print('Validation mean loss: %.2f' % float(valid_loss / test_size))
-
+            print("predictions:", predict)
+    print('Testing mean loss: %.2f' % float(valid_loss / test_size))
