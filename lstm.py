@@ -1,9 +1,10 @@
+#!/bin/python
 import csv
 import numpy as np
 import tensorflow as tf
 
 dataList = list()
-with open('dataset_63642samples_with_noise.csv', 'rb') as csvfile:
+with open('datasetTR105101_noise_train.csv', 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         dataList.append(row)
@@ -14,13 +15,13 @@ dMean = np.mean(dArray, 1)
 for i in range(dArray.shape[1]):
     dArray[:,i] = (dArray[:,i] - dMean)/dDev
 
-valid_size = 1000
+valid_size = 200
 valid_set = dArray[:,:valid_size]
-test_set = dArray[:, valid_size:valid_size*5]
-train_set = dArray[:,valid_size*5:] 
+test_set = dArray[:, valid_size:valid_size*3]
+train_set = dArray[:,valid_size*3:] 
 
-lstm_size = 64
-batch_size = 50
+lstm_size = 128
+batch_size = 35
 num_unrollings=1
 input_size = 4
 output_size = 2
@@ -53,11 +54,9 @@ train_gen = GenerateBatchData(train_set, batch_size, num_unrollings)
 valid_gen = GenerateBatchData(valid_set, 1, 1)
 test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
-#print("batch:", batch)
-#print("label:", label)            
-extent_size = 50
-hidden_size = 25
-dropRate = 0.9
+extent_size = 64
+hidden_size = 64
+dropRate = 0.96
 graph=tf.Graph()
 with graph.as_default():
 
@@ -95,13 +94,13 @@ with graph.as_default():
     b2 = tf.Variable(tf.zeros([output_size]), dtype=tf.float32)
 
     def train_feed_model(output):
-        hidden_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(output, w1) +
+        hidden1_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(output, w1) + 
                     b1),dropRate)
-        predictions = tf.matmul(hidden_layer,w2) + b2
+        predictions = tf.matmul(hidden1_layer,w2) + b2
         return predictions
     def feed_model(output):
-        hidden_layer = tf.nn.relu(tf.matmul(output, w1) + b1)
-        predictions = tf.matmul(hidden_layer,w2) + b2
+        hidden1_layer = tf.nn.relu(tf.matmul(output, w1) + b1)
+        predictions = tf.matmul(hidden1_layer,w2) + b2
         return predictions
     
     train_inputs = list()
@@ -135,7 +134,7 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.0, global_step,500, 0.8)
+        1.0, global_step,450, 0.8)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
