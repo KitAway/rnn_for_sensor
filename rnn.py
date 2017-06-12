@@ -13,9 +13,9 @@ dDev = np.std(trainArray, 1)
 dMean = np.mean(trainArray, 1)
 for i in range(trainArray.shape[1]):
     trainArray[:,i] = (trainArray[:,i] - dMean)/dDev
-noisetarget = np.append(np.asarray([[0],[0]], dtype=float), trainArray[4:, :-1], axis=1)
-tInput = np.append(trainArray[:4,:], noisetarget, axis=0)
-trainArray = np.append(tInput, trainArray[4:,:], axis=0)
+#noisetarget = np.append(np.asarray([[0],[0]], dtype=float), trainArray[4:, :-1], axis=1)
+#tInput = np.append(trainArray[:4,:], noisetarget, axis=0)
+#trainArray = np.append(tInput, trainArray[4:,:], axis=0)
 dataList = list()
 valid_dataset = 'dataset_63642samples_with_noise.csv'
 with open(valid_dataset, 'rb') as csvfile:
@@ -29,9 +29,9 @@ for i in range(validArray.shape[1]):
     validArray[:,i] = (validArray[:,i] - dMean)/dDev
 
 valid_size = 1000
-test_size = 4000
 valid_set = validArray[:,:valid_size]
-test_set = validArray[:,valid_size : 5 * valid_size]
+test_set = validArray[:,valid_size :]
+test_size=test_set.shape[1]
 train_set = trainArray 
 train_size = train_set.shape[1]    
 
