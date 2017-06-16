@@ -66,9 +66,9 @@ train_gen = GenerateBatchData(train_set, batch_size, num_unrollings)
 valid_gen = GenerateBatchData(valid_set, 1, 1)
 test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
-extent_size = 64
+extent_size = 128
 hidden_size = 64
-dropRate = 0.75
+dropRate = 0.7
 graph=tf.Graph()
 with graph.as_default():
 
@@ -146,7 +146,7 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.2, global_step,500, 0.8)
+        1.0, global_step,500, 0.9)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.3)
@@ -173,11 +173,12 @@ summary_frequency = 500
 
 with tf.Session(graph=graph) as session:
     tf.global_variables_initializer().run()
-    print('Initialized')
+    print 'Initialized'
     mean_loss = 0
     for _ in range(num_repeat):
         train_gen.reset()
         reset_train.run()
+        print '*'*30, 'repeating...','*'*30
         for step in range(num_steps):
             batches, labels = train_gen.next()
             feed_dict = dict()
@@ -192,9 +193,8 @@ with tf.Session(graph=graph) as session:
                 if step > 0:
                     mean_loss = mean_loss / summary_frequency
           # The mean loss is an estimate of the loss over the last few batches.
-                print(
-                    'Average loss at step %d: %f learning rate: %f' % (step,
-                        mean_loss, lr))
+                print 'Average loss at step %d: %f learning rate: %f' % (step,
+                        mean_loss, lr)
                 mean_loss = 0
         #        print("predictions:", p)
         #        print("targets:", labels)
@@ -207,7 +207,7 @@ with tf.Session(graph=graph) as session:
                     predictPos = predict * dDev[4:]
                     targetPos = vl[0] * dDev[4:]
                     valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
-                print('Validation mean loss: %.2f' % float(valid_loss / test_size))
+                print 'Validation mean loss: %.2f' % float(valid_loss / test_size)
     reset_state.run() 
     valid_loss = 0;
     test_size = valid_size * 4 
@@ -219,7 +219,7 @@ with tf.Session(graph=graph) as session:
         targetPos = vl[0] * dDev[4:]
         valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
         if i > display and i < display + 30:
-            print('='*80)
-            print("positions:", vl[0]*dDev[4:]+dMean[4:])
-            print("predictions:", predict*dDev[4:]+dMean[4:])
-    print('Testing mean loss: %.2f' % float(valid_loss / test_size))
+            print '='*80
+            print "positions:", vl[0]*dDev[4:]+dMean[4:] 
+            print "predictions:", predict*dDev[4:]+dMean[4:] 
+    print 'Testing mean loss: %.2f' % float(valid_loss / test_size) 
