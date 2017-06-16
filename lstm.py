@@ -68,7 +68,7 @@ test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
 extent_size = 128
 hidden_size = 64
-dropRate = 0.7
+keepRate = 0.7
 graph=tf.Graph()
 with graph.as_default():
 
@@ -83,8 +83,8 @@ with graph.as_default():
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
         Note that in this formulation, we omit the various connections between the
         previous state and the gates."""
-        ie = tf.nn.relu(tf.nn.dropout(tf.matmul(i, w0)+b0,dropRate))
-        _matmul=tf.nn.dropout(tf.matmul(ie, lx),dropRate) + tf.matmul(o, lm) + lb
+        ie = tf.nn.relu(tf.nn.dropout(tf.matmul(i, w0)+b0,keepRate))
+        _matmul=tf.nn.dropout(tf.matmul(ie, lx),keepRate) + tf.matmul(o, lm) + lb
         input_gate, forget_gate, update, output_gate = tf.split(_matmul, 4, 1)
         state = tf.sigmoid(forget_gate) * state + tf.sigmoid(input_gate) * tf.tanh(update)
         return tf.sigmoid(output_gate) * tf.tanh(state), state
@@ -107,7 +107,7 @@ with graph.as_default():
 
     def train_feed_model(output):
         hidden1_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(output, w1) + 
-                    b1),dropRate)
+                    b1),keepRate)
         predictions = tf.matmul(hidden1_layer,w2) + b2
         return predictions
     def feed_model(output):
