@@ -60,6 +60,8 @@ class GenerateBatchData(object):
             batches.append(batch)
             targets.append(target)
         return batches, targets
+    def reset(self):
+        self._cursor = 0
 train_gen = GenerateBatchData(train_set, batch_size, num_unrollings)
 valid_gen = GenerateBatchData(valid_set, 1, 1)
 test_gen = GenerateBatchData(test_set, 1, 1)
@@ -144,7 +146,7 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.0, global_step,500, 0.65)
+        1.2, global_step,500, 0.8)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.3)
@@ -165,44 +167,47 @@ with graph.as_default():
     with tf.control_dependencies([init_valid_output.assign(valid_output),
                                 init_valid_state.assign(valid_state)]):
         sample_prediction = feed_model(valid_output)
-
+num_repeat = 10
 num_steps = train_size//batch_size
-summary_frequency = 100
+summary_frequency = 500
 
 with tf.Session(graph=graph) as session:
     tf.global_variables_initializer().run()
     print('Initialized')
     mean_loss = 0
-    for step in range(num_steps):
-        batches, labels = train_gen.next()
-        feed_dict = dict()
-        for i in range(num_unrollings):
-            feed_dict[train_inputs[i]] = batches[i]
-#            print(batches[i])
-            feed_dict[train_targets[i]] = labels[i]
-        _, l, p, lr = session.run(
-            [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
-        mean_loss += l
-        if step % summary_frequency == 0:
-            if step > 0:
-                mean_loss = mean_loss / summary_frequency
-      # The mean loss is an estimate of the loss over the last few batches.
-            print(
-                'Average loss at step %d: %f learning rate: %f' % (step,
-                    mean_loss, lr))
-            mean_loss = 0
-    #        print("predictions:", p)
-    #        print("targets:", labels)
-            reset_state.run() 
-            valid_loss = 0;
-            test_size = valid_size 
-            for _ in range(test_size):
-                vb,vl = valid_gen.next()
-                predict = sample_prediction.eval({valid_input: vb[0]})
-                predictPos = predict * dDev[4:]
-                targetPos = vl[0] * dDev[4:]
-                valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
-            print('Validation mean loss: %.2f' % float(valid_loss / test_size))
+    for _ in range(num_repeat):
+        train_gen.reset()
+        reset_train.run()
+        for step in range(num_steps):
+            batches, labels = train_gen.next()
+            feed_dict = dict()
+            for i in range(num_unrollings):
+                feed_dict[train_inputs[i]] = batches[i]
+    #            print(batches[i])
+                feed_dict[train_targets[i]] = labels[i]
+            _, l, p, lr = session.run(
+                [optimizer, loss, predictions, learning_rate], feed_dict=feed_dict)
+            mean_loss += l
+            if step % summary_frequency == 0:
+                if step > 0:
+                    mean_loss = mean_loss / summary_frequency
+          # The mean loss is an estimate of the loss over the last few batches.
+                print(
+                    'Average loss at step %d: %f learning rate: %f' % (step,
+                        mean_loss, lr))
+                mean_loss = 0
+        #        print("predictions:", p)
+        #        print("targets:", labels)
+                reset_state.run() 
+                valid_loss = 0;
+                test_size = valid_size 
+                for _ in range(test_size):
+                    vb,vl = valid_gen.next()
+                    predict = sample_prediction.eval({valid_input: vb[0]})
+                    predictPos = predict * dDev[4:]
+                    targetPos = vl[0] * dDev[4:]
+                    valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
+                print('Validation mean loss: %.2f' % float(valid_loss / test_size))
     reset_state.run() 
     valid_loss = 0;
     test_size = valid_size * 4 
