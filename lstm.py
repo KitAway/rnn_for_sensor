@@ -2,6 +2,7 @@
 import csv
 import numpy as np
 import tensorflow as tf
+#import matplotlib.pyplot as plt
 
 dataList = list()
 with open('trainset105101.csv', 'rb') as csvfile:
@@ -27,15 +28,15 @@ for i in range(test_data.shape[1]):
 ################################
 # take validation array from dArray
 valid_size = 400
-
 valid_set = dArray[:,5000:(5000+valid_size)]
+################################
 test_set = test_data
-##################
 # consider all test size
-test_size=test_data.shape[1]
-##################
+test_size=test_set.shape[1]
+#################################
 train_set = dArray
 train_size = train_set.shape[1]
+#################################
 
 lstm_size = 128
 batch_size = 35
@@ -69,13 +70,16 @@ class GenerateBatchData(object):
         return batches, targets
     def reset(self):
         self._cursor = 0
+
 train_gen = GenerateBatchData(train_set, batch_size, num_unrollings)
 valid_gen = GenerateBatchData(valid_set, 1, 1)
 test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
+
 extent_size = 128
 hidden_size = 64
 keepRate = 0.7
+
 graph=tf.Graph()
 with graph.as_default():
 
@@ -174,6 +178,7 @@ with graph.as_default():
     with tf.control_dependencies([init_valid_output.assign(valid_output),
                                 init_valid_state.assign(valid_state)]):
         sample_prediction = feed_model(valid_output)
+
 num_repeat = 10
 num_steps = train_size//batch_size
 summary_frequency = 500
@@ -208,15 +213,16 @@ with tf.Session(graph=graph) as session:
                 reset_state.run() 
                 valid_loss = 0;
                 #test_size = valid_size 
-                for _ in range(test_size):
+                for _ in range(valid_size):
                     vb,vl = valid_gen.next()
                     predict = sample_prediction.eval({valid_input: vb[0]})
                     predictPos = predict * dDev[4:]
                     targetPos = vl[0] * dDev[4:]
                     valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
                 print 'Validation mean loss: %.4f' % float(valid_loss / test_size)
+
     reset_state.run() 
-    valid_loss = 0;
+    test_loss = 0;
     #test_size = valid_size * 4 
     display = test_size * 0.8
 
@@ -227,7 +233,7 @@ with tf.Session(graph=graph) as session:
         predict = sample_prediction.eval({valid_input: vb[0]})
         predictPos = predict * dDev[4:]
         targetPos = vl[0] * dDev[4:]
-        valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
+        test_loss = test_loss + ((predictPos - targetPos)**2).mean()
         #if i > display and i < display + 30:
 # put predictions in an array
 	output_list.append(predict*dDev[4:]+dMean[4:])
@@ -236,8 +242,8 @@ with tf.Session(graph=graph) as session:
         print '='*80
         print "positions:", vl[0]*dDev[4:]+dMean[4:] 
         print "predictions:", predict*dDev[4:]+dMean[4:] 
-    print 'Testing mean loss: %.4f' % float(valid_loss / test_size) 
+    print 'Testing mean loss: %.4f' % float(test_loss / test_size) 
 
-with open("output_2.csv",'wb') as resultFile:
-    wr = csv.writer(resultFile, dialect='excel')
-    wr.writerows(output_list)
+#with open("output_3.csv",'wb') as resultFile:
+#    wr = csv.writer(resultFile, dialect='excel')
+#    wr.writerows(output_list)
