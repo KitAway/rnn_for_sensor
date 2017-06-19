@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 dataList = list()
-with open('datasetTR105101_noise_train.csv', 'rb') as csvfile:
+with open('trainset105101.csv', 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         dataList.append(row)
@@ -15,7 +15,7 @@ for i in range(dArray.shape[1]):
     dArray[:,i] = (dArray[:,i] - dMean)/dDev
 
 testList=list()
-with open('datasetT393_noise_test.csv', 'rb') as csvfile:
+with open('testset393.csv', 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         testList.append(row)
@@ -24,10 +24,17 @@ test_data = np.asarray(testList, dtype=float)
 for i in range(test_data.shape[1]):
     test_data[:,i] = (test_data[:,i] - dMean)/dDev
 
-valid_size = 50
-valid_set = test_data[:,:valid_size]
+################################
+# take validation array from dArray
+valid_size = 400
+
+valid_set = dArray[:,5000:(5000+valid_size)]
 test_set = test_data
-train_set = dArray 
+##################
+# consider all test size
+test_size=test_data.shape[1]
+##################
+train_set = dArray
 train_size = train_set.shape[1]
 
 lstm_size = 128
@@ -200,26 +207,37 @@ with tf.Session(graph=graph) as session:
         #        print("targets:", labels)
                 reset_state.run() 
                 valid_loss = 0;
-                test_size = valid_size 
+                #test_size = valid_size 
                 for _ in range(test_size):
                     vb,vl = valid_gen.next()
                     predict = sample_prediction.eval({valid_input: vb[0]})
                     predictPos = predict * dDev[4:]
                     targetPos = vl[0] * dDev[4:]
                     valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
-                print 'Validation mean loss: %.2f' % float(valid_loss / test_size)
+                print 'Validation mean loss: %.4f' % float(valid_loss / test_size)
     reset_state.run() 
     valid_loss = 0;
-    test_size = valid_size * 4 
+    #test_size = valid_size * 4 
     display = test_size * 0.8
+
+    output_list=[]
+    target_list=[]
     for i in range(test_size):
         vb,vl = test_gen.next()
         predict = sample_prediction.eval({valid_input: vb[0]})
         predictPos = predict * dDev[4:]
         targetPos = vl[0] * dDev[4:]
         valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
-        if i > display and i < display + 30:
-            print '='*80
-            print "positions:", vl[0]*dDev[4:]+dMean[4:] 
-            print "predictions:", predict*dDev[4:]+dMean[4:] 
-    print 'Testing mean loss: %.2f' % float(valid_loss / test_size) 
+        #if i > display and i < display + 30:
+# put predictions in an array
+	output_list.append(predict*dDev[4:]+dMean[4:])
+# put targets in an array
+	target_list.append(vl[0]*dDev[4:]+dMean[4:])
+        print '='*80
+        print "positions:", vl[0]*dDev[4:]+dMean[4:] 
+        print "predictions:", predict*dDev[4:]+dMean[4:] 
+    print 'Testing mean loss: %.4f' % float(valid_loss / test_size) 
+
+with open("output_2.csv",'wb') as resultFile:
+    wr = csv.writer(resultFile, dialect='excel')
+    wr.writerows(output_list)
