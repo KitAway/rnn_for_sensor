@@ -4,8 +4,10 @@ import numpy as np
 import tensorflow as tf
 #import matplotlib.pyplot as plt
 
+trainCSV = "trainset_tnoise_105101.csv"
+testCSV = "testset_tnoise_393.csv"
 dataList = list()
-with open('trainset105101.csv', 'rb') as csvfile:
+with open(trainCSV, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         dataList.append(row)
@@ -16,7 +18,7 @@ for i in range(dArray.shape[1]):
     dArray[:,i] = (dArray[:,i] - dMean)/dDev
 
 testList=list()
-with open('testset393.csv', 'rb') as csvfile:
+with open(testCSV, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
         testList.append(row)
