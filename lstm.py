@@ -40,10 +40,11 @@ train_set = dArray
 train_size = train_set.shape[1]
 #################################
 
-lstm_size = 128
+lstm_size = 512
 batch_size = 35
 num_unrollings=1
-input_size = 4
+input_size = 20
+capaSen = 4
 output_size = 2
     
 class GenerateBatchData(object):
@@ -78,17 +79,20 @@ valid_gen = GenerateBatchData(valid_set, 1, 1)
 test_gen = GenerateBatchData(test_set, 1, 1)
 batch, label = train_gen.next()
 
-extent_size = 128
-hidden_size = 64
-keepRate = 0.7
+sensor_size = 128
+infrared_size = 32
+hidden_size = 55
+keepRate = 1.0
 
 graph=tf.Graph()
 with graph.as_default():
 
-    w0 = tf.Variable(tf.truncated_normal([input_size, extent_size]))
-    b0 = tf.Variable(tf.zeros([extent_size]))
+    w0 = tf.Variable(tf.truncated_normal([capaSen, sensor_size]))
+    b0 = tf.Variable(tf.zeros([sensor_size]))
+    w00 = tf.Variable(tf.truncated_normal([input_size - capaSen, infrared_size]))
+    b00 = tf.Variable(tf.zeros([infrared_size]))
 
-    lx = tf.Variable(tf.truncated_normal([extent_size, 4 * lstm_size], -0.1, 0.1))
+    lx = tf.Variable(tf.truncated_normal([sensor_size + infrared_size, 4 * lstm_size], -0.1, 0.1))
     lm = tf.Variable(tf.truncated_normal([lstm_size, 4 * lstm_size], -0.1, 0.1))
     lb = tf.Variable(tf.zeros([1, 4 * lstm_size]))
     
@@ -96,7 +100,8 @@ with graph.as_default():
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
         Note that in this formulation, we omit the various connections between the
         previous state and the gates."""
-        ie = tf.nn.relu(tf.nn.dropout(tf.matmul(i, w0)+b0,keepRate))
+        capa, infra = tf.split(i, [capaSen, input_size-capaSen], axis=1)
+        ie = tf.nn.relu(tf.nn.dropout(tf.concat([tf.matmul(capa,w0)+b0,tf.matmul(infra, w00) + b00 ], 1),keepRate))
         _matmul=tf.nn.dropout(tf.matmul(ie, lx),keepRate) + tf.matmul(o, lm) + lb
         input_gate, forget_gate, update, output_gate = tf.split(_matmul, 4, 1)
         state = tf.sigmoid(forget_gate) * state + tf.sigmoid(input_gate) * tf.tanh(update)
@@ -105,7 +110,8 @@ with graph.as_default():
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
         Note that in this formulation, we omit the various connections between the
         previous state and the gates."""
-        ie = tf.nn.relu(tf.matmul(i, w0)+b0)
+        capa, infra = tf.split(i, [capaSen, input_size-capaSen], axis=1)
+        ie = tf.nn.relu(tf.concat([tf.matmul(capa,w0)+b0,tf.matmul(infra, w00) + b00 ], 1))
         _matmul=tf.matmul(ie, lx) + tf.matmul(o, lm) + lb
         input_gate, forget_gate, update, output_gate = tf.split(_matmul, 4, 1)
         state = tf.sigmoid(forget_gate) * state + tf.sigmoid(input_gate) * tf.tanh(update)
@@ -159,7 +165,7 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        1.0, global_step,500, 0.9)
+        1.0, global_step,1000, 0.9)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
     gradients, _ = tf.clip_by_global_norm(gradients, 1.3)
@@ -181,7 +187,7 @@ with graph.as_default():
                                 init_valid_state.assign(valid_state)]):
         sample_prediction = feed_model(valid_output)
 
-num_repeat = 10
+num_repeat = 15
 num_steps = train_size//batch_size
 summary_frequency = 500
 
@@ -218,8 +224,8 @@ with tf.Session(graph=graph) as session:
                 for _ in range(valid_size):
                     vb,vl = valid_gen.next()
                     predict = sample_prediction.eval({valid_input: vb[0]})
-                    predictPos = predict * dDev[4:]
-                    targetPos = vl[0] * dDev[4:]
+                    predictPos = predict * dDev[input_size:]
+                    targetPos = vl[0] * dDev[input_size:]
                     valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
                 print 'Validation mean loss: %.4f' % float(valid_loss / test_size)
 
@@ -233,17 +239,17 @@ with tf.Session(graph=graph) as session:
     for i in range(test_size):
         vb,vl = test_gen.next()
         predict = sample_prediction.eval({valid_input: vb[0]})
-        predictPos = predict * dDev[4:]
-        targetPos = vl[0] * dDev[4:]
+        predictPos = predict * dDev[input_size:]
+        targetPos = vl[0] * dDev[input_size:]
         test_loss = test_loss + ((predictPos - targetPos)**2).mean()
         #if i > display and i < display + 30:
 # put predictions in an array
-	output_list.append(predict*dDev[4:]+dMean[4:])
+	output_list.append(predict*dDev[input_size:]+dMean[input_size:])
 # put targets in an array
-	target_list.append(vl[0]*dDev[4:]+dMean[4:])
+	target_list.append(vl[0]*dDev[input_size:]+dMean[input_size:])
         print '='*80
-        print "positions:", vl[0]*dDev[4:]+dMean[4:] 
-        print "predictions:", predict*dDev[4:]+dMean[4:] 
+        print "positions:", vl[0]*dDev[input_size:]+dMean[input_size:] 
+        print "predictions:", predict*dDev[input_size:]+dMean[input_size:] 
     print 'Testing mean loss: %.4f' % float(test_loss / test_size) 
 
 #with open("output_3.csv",'wb') as resultFile:
