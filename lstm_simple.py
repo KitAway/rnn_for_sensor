@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('AGG') 
 import matplotlib.pyplot as plt
 import argparse
+from tensorflow.python.framework import graph_util
 
 def main(lstm_size, num_repeat, dropRate):
     batch_size = 35
@@ -45,6 +46,13 @@ def main(lstm_size, num_repeat, dropRate):
     output_list=np.zeros(target_list.shape)
     for i in range(test_data.shape[1]):
         test_data[:,i] = (test_data[:,i] - dMean)/dDev
+
+    sensor_list=test_data[:input_size,:].copy()
+    np.savetxt("sensor_input.txt", sensor_list.transpose().reshape([1, -1]), delimiter=',')
+    pos_list=test_data[input_size:,:].copy()
+    np.savetxt("position.txt", pos_list.transpose().reshape([1, -1]), delimiter=',')
+    output_list=np.zeros(target_list.shape)
+    
     ################################
     # take validation array from dArray
     valid_size = 40
@@ -118,8 +126,8 @@ def main(lstm_size, num_repeat, dropRate):
         b1 = tf.Variable(tf.zeros([output_size]), dtype=tf.float32)
 
         saver = tf.train.Saver()
-        def feed_model(output):
-            predictions = tf.matmul(output,w1) + b1
+        def feed_model(output, name=None):
+            predictions = tf.add(tf.matmul(output,w1) ,b1,name=name)
             return predictions
         
         train_inputs = list()
@@ -142,7 +150,7 @@ def main(lstm_size, num_repeat, dropRate):
         with tf.control_dependencies([init_state.assign(state),
                     init_output.assign(output)]):
             outCat = tf.concat(outputs,0)
-            predictions = feed_model(outCat)
+            predictions = feed_model(outCat,'train_predict')
 
             # absolute error
             loss = tf.losses.mean_squared_error(tf.concat(train_targets,0),
@@ -173,7 +181,7 @@ def main(lstm_size, num_repeat, dropRate):
             valid_input, init_valid_output, init_valid_state)
         with tf.control_dependencies([init_valid_output.assign(valid_output),
                                     init_valid_state.assign(valid_state)]):
-            sample_prediction = feed_model(valid_output)
+            sample_prediction = feed_model(valid_output,'prediction')
 
     num_steps = train_size//batch_size
     summary_frequency = 500
@@ -185,7 +193,7 @@ def main(lstm_size, num_repeat, dropRate):
         for _ in range(num_repeat):
             train_gen.reset()
             reset_train.run()
-#            print('*'*30, 'repeating...','*'*30)
+            print('*'*30, 'repeating...','*'*30)
             for step in range(num_steps):
                 batches, labels = train_gen.next()
                 feed_dict = dict()
@@ -216,6 +224,14 @@ def main(lstm_size, num_repeat, dropRate):
 #                    print('Validation mean loss: %.4f' % float(valid_loss /
 #                                test_size))
 
+        graph_def=graph.as_graph_def()
+        output_graph_def = graph_util.convert_variables_to_constants(
+                        session, # The session is used to retrieve the weights
+                        graph_def, # The graph_def is used to retrieve the nodes
+                        'prediction'.split(",") #The output node names are used to select the usefull nodes
+        )
+        with tf.gfile.GFile(r'lstm_simple.pb', "wb") as f:
+                        f.write(output_graph_def.SerializeToString())
         saver.save(session,
                 'PARAS-size%d-repeating%d-dropRate%0.2f.ckpt'%(lstm_size,num_repeat,
                     dropRate))
@@ -242,11 +258,11 @@ def main(lstm_size, num_repeat, dropRate):
 #                    predict*dDev[input_size:]+dMean[input_size:] )
         print( 'Testing mean loss: %.4f' % mse )
         #fig=plt.figure()
-        plt.plot(output_list[0,:], output_list[1,:],'*-')
-        plt.plot(target_list[0,:], target_list[1,:],'k-')
-        plt.show()
-        plt.savefig('LSTM_SINGLE-lstm_size%d-repeating%d-dropRate%0.2f-mse%0.4f.svg'%(lstm_size,num_repeat,
-                    dropRate, mse))
+    #    plt.plot(output_list[0,:], output_list[1,:],'*-')
+    #    plt.plot(target_list[0,:], target_list[1,:],'k-')
+    #    plt.show()
+    #    plt.savefig('LSTM_SINGLE-lstm_size%d-repeating%d-dropRate%0.2f-mse%0.4f.svg'%(lstm_size,num_repeat,
+    #                dropRate, mse))
         #plt.show()
     #with open("output_3.csv",'wb') as resultFile:
     #    wr = csv.writer(resultFile, dialect='excel')
