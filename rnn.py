@@ -1,9 +1,10 @@
+#!/bin/python
 import csv
 import numpy as np
 import tensorflow as tf
 
 dataList = list()
-train_dataset = 'dataset_63642samples_with_noise.csv'
+train_dataset = r'dataset_63642samples_with_noise.csv'
 with open(train_dataset, 'rb') as csvfile:
     creader = csv.reader(csvfile)
     for row in creader:
@@ -13,9 +14,9 @@ dDev = np.std(trainArray, 1)
 dMean = np.mean(trainArray, 1)
 for i in range(trainArray.shape[1]):
     trainArray[:,i] = (trainArray[:,i] - dMean)/dDev
-#noisetarget = np.append(np.asarray([[0],[0]], dtype=float), trainArray[4:, :-1], axis=1)
-#tInput = np.append(trainArray[:4,:], noisetarget, axis=0)
-#trainArray = np.append(tInput, trainArray[4:,:], axis=0)
+noisetarget = np.append(np.asarray([[0],[0]], dtype=float), trainArray[4:, :-1], axis=1)
+tInput = np.append(trainArray[:4,:], noisetarget, axis=0)
+trainArray = np.append(tInput, trainArray[4:,:], axis=0)
 dataList = list()
 valid_dataset = 'dataset_63642samples_with_noise.csv'
 with open(valid_dataset, 'rb') as csvfile:
@@ -35,7 +36,7 @@ test_size=test_set.shape[1]
 train_set = trainArray 
 train_size = train_set.shape[1]    
 
-batch_size=30
+batch_size=20
 num_unrollings=1
 input_size = 4
 output_size = 2
@@ -70,18 +71,22 @@ train_gen = GenerateBatchData(train_set, batch_size, num_unrollings,
         train_input_size)
 valid_gen = GenerateBatchData(valid_set, 1, 1, input_size)
 test_gen = GenerateBatchData(test_set, 1, 1, input_size)
-hidden1_size = 64
+hidden0_size = 64
+hidden1_size = 0
 hidden2_size = 64
 hidden3_size = 64
 hidden4_size = 64
-dropoutRate = 0.3
+dropoutRate = 0.9
 graph=tf.Graph()
 with graph.as_default():
 
-    w0 = tf.Variable(tf.truncated_normal([train_input_size, hidden1_size]))
-    b0 = tf.Variable(tf.zeros([hidden1_size]))
+    w0 = tf.Variable(tf.truncated_normal([input_size, hidden0_size]))
+    b0 = tf.Variable(tf.zeros([hidden0_size]))
+    
+    w00 = tf.Variable(tf.truncated_normal([output_size, hidden1_size]))
+    b00 = tf.Variable(tf.zeros([hidden1_size]))
 
-    w1 = tf.Variable(tf.truncated_normal([hidden1_size, hidden2_size]))
+    w1 = tf.Variable(tf.truncated_normal([hidden0_size+hidden1_size, hidden2_size]))
     b1 = tf.Variable(tf.zeros([hidden2_size]))
 
     w2 = tf.Variable(tf.truncated_normal([hidden2_size, hidden3_size]))
@@ -93,7 +98,9 @@ with graph.as_default():
     b4 = tf.Variable(tf.zeros([output_size]))
 
     def train_feed_model(x):
-        hidden1_layer = tf.nn.relu(tf.matmul(x, w0) + b0)
+        x1,x2= tf.split(x, [input_size, output_size], axis=1)
+        hidden1_layer = tf.nn.dropout(tf.nn.relu(tf.concat([tf.matmul(x1, w0) +
+                    b0,tf.matmul(x2,w00)+b00], axis=1)),dropoutRate)
         hidden2_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(hidden1_layer, w1) +
                     b1), dropoutRate)
         hidden3_layer = tf.nn.dropout(tf.nn.relu(tf.matmul(hidden2_layer, w2) +
@@ -103,7 +110,9 @@ with graph.as_default():
         predictions = tf.matmul(hidden4_layer,w4) + b4
         return predictions
     def feed_model(x):
-        hidden1_layer = tf.nn.relu(tf.matmul(x, w0) + b0)
+        x1,x2= tf.split(x, [input_size, output_size], axis=1)
+        hidden1_layer = tf.nn.relu(tf.concat([tf.matmul(x1, w0) +
+                    b0,tf.matmul(x2,w00)+b00], axis=1))
         hidden2_layer = tf.nn.relu(tf.matmul(hidden1_layer, w1) + b1)
         hidden3_layer = tf.nn.relu(tf.matmul(hidden2_layer, w2) + b2)
         hidden4_layer = tf.nn.relu(tf.matmul(hidden3_layer, w3) + b3)
@@ -125,10 +134,10 @@ with graph.as_default():
     
     global_step = tf.Variable(0)
     learning_rate = tf.train.exponential_decay(
-        2.0, global_step, 500, 0.6)
+        1.0, global_step, 500, 0.6)
     optimizer = tf.train.GradientDescentOptimizer(learning_rate)
     gradients, v = zip(*optimizer.compute_gradients(loss))
-    gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
+    gradients, _ = tf.clip_by_global_norm(gradients, 10.25)
     optimizer = optimizer.apply_gradients(
         zip(gradients, v), global_step=global_step)
 

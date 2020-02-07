@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib
 import matplotlib.pyplot as plt
+from tensorflow.python.framework import graph_util
 
 lstm_size = 256
 batch_size = 35
@@ -129,9 +130,9 @@ with graph.as_default():
                     b1),keepRate)
         predictions = tf.matmul(hidden1_layer,w2) + b2
         return predictions
-    def feed_model(output):
+    def feed_model(output, name=None):
         hidden1_layer = tf.nn.relu(tf.matmul(output, w1) + b1)
-        predictions = tf.matmul(hidden1_layer,w2) + b2
+        predictions = tf.add(tf.matmul(hidden1_layer,w2) , b2, name=name)
         return predictions
     
     train_inputs = list()
@@ -185,7 +186,7 @@ with graph.as_default():
         valid_input, init_valid_output, init_valid_state)
     with tf.control_dependencies([init_valid_output.assign(valid_output),
                                 init_valid_state.assign(valid_state)]):
-        sample_prediction = feed_model(valid_output)
+        sample_prediction = feed_model(valid_output, 'prediction')
 
 num_repeat = 12
 num_steps = train_size//batch_size
@@ -228,6 +229,16 @@ with tf.Session(graph=graph) as session:
                     targetPos = vl[0] * dDev[input_size:]
                     valid_loss = valid_loss + ((predictPos - targetPos)**2).mean()
                 print 'Validation mean loss: %.4f' % float(valid_loss / test_size)
+
+    graph_def=graph.as_graph_def()
+    output_graph_def = graph_util.convert_variables_to_constants(
+                    session, # The session is used to retrieve the weights
+                    graph_def, # The graph_def is used to retrieve the nodes
+                    'prediction'.split(",") #The output node names are used to select the usefull nodes
+    )
+    with tf.gfile.GFile(r'lstm.pb', "wb") as f:
+                    f.write(output_graph_def.SerializeToString())
+
 
     reset_state.run() 
     test_loss = 0;
